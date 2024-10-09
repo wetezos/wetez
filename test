@@ -1,0 +1,101 @@
+## Zircuit L2 Node
+
+This guide contains instructions on running the L2 node for Zircuit.
+
+### Disclaimer
+This setup is for demonstration use. For production, you may want to us K8S or additional setup for monitoring/alerting, etc.
+
+### System Requirements
+1. A VM with the characteristics is proven to be working (the VM distributes op-node and l2-geth resources equally): 
+   - 16GB RAM
+   - 4000m CPU
+   - 1TB of storage (less than 50% utilized currently, but this could increase as the chain progresses) 
+   - r5a.8xlarge instance
+   - SSD and high IOPS recommended for `l2-geth` storage
+2. A reasonable denial-of-service protection since the node is open to the world
+3. Access to following repos in our docker hub registry:
+   - [zircuit1/op-node](https://hub.docker.com/repository/docker/zircuit1/op-node/general)
+   - [zircuit1/l2-geth](https://hub.docker.com/repository/docker/zircuit1/l2-geth/general)
+- L1 Ethereum Beacon/Execution Archive Node. It is officialy supported provides the complete historical data necessary for proper validation and processing. We recommend using a service like [Chainstack](https://chainstack.com/pricing/) to set up your beacon and execution nodes.
+   - Sepolia (Alchemy, Infura, etc) node for testnet and
+   - Ethereum node for mainnet
+
+**NOTE:** If you use Prysm to run the beacon chain, you might need to add the `--blob-retention-epochs` parameter to specify the retained data. Otherwise, only the most recent 2000 slots will be retained.
+
+
+### Dependencies
+- `docker` and `docker-compose`
+- `openssl` cli
+
+### Setup
+1. Copy `.arg.[env]` to `.arg` and:
+      - add your L1 WS endpoints
+      - add your L1 beacon endpoint.
+         - 
+      - add the name of your node in `ETH_STATS_NODE`. This name will be part of the public dashboard, to prevent identifiable information obsecure it can be obscured.
+         * Testnet: ETHStats dashboard https://ethstats-eu.testnet.zircuit.com
+         * Mainnet: ETHStats dashboard:https://ethstats-ap.mainnet.zircuit.com
+      - add the provided `WS_SECRET`
+      - add the provided `SEQUENCER_L2_HOSTNAME`
+2. Add the provided DSN to gethconfig.toml
+3. Generate random p2p and rpc auth keys (these do not hold funds and should they get lost, new ones can be generated)
+   ```
+      openssl rand -hex 32 | tr -d "\n" > "jwt-secret.txt"
+      openssl rand -hex 32 | tr -d "\n" > "p2p-node-key.txt"
+   ```
+4. Check the Repository Overview on dockerhub for [l2-geth](https://hub.docker.com/repository/docker/zircuit1/l2-geth/general) and [op-node](https://hub.docker.com/repository/docker/zircuit1/op-node/general).
+Update the image tag for `op-node` and `l2-geth` depending on your environment to ensure you pull & run latest and correct version for testnet or mainnet.
+5. Pull images in order to check access
+   Ensure that you have access to the containers by running `docker-compose pull`.
+6. Start the node with `docker-compose --env-file ./.arg up -d`
+7. Check the logs to ensure everything is progressing as expected.
+   `docker logs replica_zircuit-op-node-replica-1 --follow` should contain
+   the following entries:
+   - `Advancing bq origin`
+   - `Optimistically queueing unsafe L2 execution payload`.
+
+### Cleanup
+
+To cleanup after testing or when switching networks, run
+```
+# stop the containers
+docker-compose --env-file ./.arg down
+# remove the volumes, i.e. the local data
+docker volume rm replica_zircuit_l2_data_replica replica_zircuit_op_log_replica
+```
+
+### FAQ
+
+
+**What is the difference between Archive Node and Full Node?**
+
+* A *Full Node* has the last 128 Blocks on disk.
+* An *Archive Node* has the entire historical state.
+
+Further reading: https://www.quicknode.com/guides/infrastructure/node-setup/ethereum-full-node-vs-archive-node
+
+**When should the replicas be updated?**
+
+- 1 hour is the recommend target, but no later than 24 hours after a release.
+- L2 node operators should update and sync with our internal releases as soon as possible. For every release we inform l2 node operators of the release version.
+
+**Is it possible to sync from the backup chaindata instead of syncing the node from Genesis?**
+
+- Yes, we reguarly provide snapshots of the chaindata every 24 hours in an S3 bucket, to reduce the lenghtly sync time from genesis block. 
+
+**How can I access the chaindata backup?**
+
+- The chaindata AWS S3 bucket is private, Therefore, you must provide us an IAM user or an IAM role (recommended) `ARN` from your own AWS Account. We then greant access to that IAM user or role for both `testnet` and `mainnet.` chaindata. Once informed of the access and authorization grant, use the [AWS CLI](https://aws.amazon.com/cli/) command below to download and use the backup data.
+
+```shell
+   ## MAINNET
+   aws s3 cp s3://chaindata-mainnet /path/to/local/directory
+
+   ### TESTNET
+   aws s3 cp s3://chaindata-testnet /path/to/local/directory
+```
+
+
+### Node Operations & Best Practices
+
+Check out our [best practices documentation](./best-practices.md)
